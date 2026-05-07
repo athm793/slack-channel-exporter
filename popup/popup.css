@@ -1,0 +1,101 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  width: 300px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  background: #1a1d21;
+  color: #d1d2d3;
+}
+
+header {
+  background: #611f69;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+header h1 { font-size: 14px; font-weight: 700; color: #fff; }
+
+#schedule-badge {
+  font-size: 11px;
+  background: #7c2d8a;
+  color: #e8b4f0;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.status-row {
+  display: flex;
+  border-bottom: 1px solid #2a2d33;
+}
+
+.stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 6px;
+  gap: 2px;
+  border-right: 1px solid #2a2d33;
+}
+.stat:last-child { border-right: none; }
+
+.stat .label { font-size: 10px; color: #9b9c9e; text-transform: uppercase; letter-spacing: 0.05em; }
+.stat .value { font-size: 13px; font-weight: 600; color: #fff; text-align: center; line-height: 1.3; }
+
+#last-results {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 32px;
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.result-row .ch { color: #d1d2d3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.result-row .ok { color: #2bac76; }
+.result-row .err { color: #e01e5a; }
+.result-row .skip { color: #9b9c9e; }
+
+.actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid #2a2d33;
+}
+
+button {
+  flex: 1;
+  padding: 7px 0;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#run-now-btn { background: #611f69; color: #fff; }
+#run-now-btn:hover { background: #7c2d8a; }
+#run-now-btn:disabled { background: #383b41; color: #666; cursor: not-allowed; }
+
+#settings-btn { background: #2c2f35; color: #d1d2d3; }
+#settings-btn:hover { background: #383b41; }
+
+.hint {
+  font-size: 12px;
+  color: #9b9c9e;
+  text-align: center;
+  padding: 8px 14px 12px;
+  line-height: 1.5;
+}
+
+.hidden { display: none !important; }

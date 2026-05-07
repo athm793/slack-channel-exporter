@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Slack Exporter</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Slack Exporter</h1>
+      <span id="schedule-badge">Every 6h</span>
+    </header>
+
+    <div class="status-row">
+      <div class="stat">
+        <span class="label">Channels</span>
+        <span class="value" id="channel-count">—</span>
+      </div>
+      <div class="stat">
+        <span class="label">Last run</span>
+        <span class="value" id="last-run">Never</span>
+      </div>
+      <div class="stat">
+        <span class="label">Next run</span>
+        <span class="value" id="next-run">—</span>
+      </div>
+    </div>
+
+    <div id="last-results"></div>
+
+    <div class="actions">
+      <button id="run-now-btn">Run Now</button>
+      <button id="settings-btn">Settings</button>
+    </div>
+
+    <div id="no-channels" class="hint hidden">
+      No channels configured. Open Settings to add channel URLs.
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

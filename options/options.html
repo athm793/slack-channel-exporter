@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Slack Exporter — Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Slack Exporter</h1>
+      <p class="subtitle">Scheduled auto-export. Files land in your Downloads folder.</p>
+    </header>
+
+    <section class="card">
+      <h2>Channel URLs</h2>
+      <p class="hint">
+        Paste one Slack channel URL per line. You can find the URL by opening a channel
+        in your browser — copy it from the address bar.<br><br>
+        Supported formats:<br>
+        <code>https://app.slack.com/client/T123/C456</code><br>
+        <code>https://myteam.slack.com/archives/C456</code>
+      </p>
+      <textarea
+        id="channel-urls"
+        placeholder="https://app.slack.com/client/T01234/C01234&#10;https://company.slack.com/archives/C56789"
+        rows="10"
+      ></textarea>
+
+      <div class="option-row">
+        <label>
+          <input type="checkbox" id="include-threads" />
+          Include thread replies (slower)
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Export Settings</h2>
+
+      <div class="option-row">
+        <label for="destination-select">Send to</label>
+        <select id="destination-select">
+          <option value="file">Download file</option>
+          <option value="sheets">Google Sheet</option>
+          <option value="both">Both</option>
+        </select>
+      </div>
+
+      <div id="file-options">
+        <div class="option-row">
+          <label for="format-select">File format</label>
+          <select id="format-select">
+            <option value="csv">CSV (Excel-friendly)</option>
+            <option value="json">JSON</option>
+            <option value="jsonl">JSONL (one message per line)</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="sheets-options" class="hidden">
+        <div class="option-row">
+          <label for="sheets-url">Apps Script URL</label>
+          <input type="text" id="sheets-url"
+            placeholder="https://script.google.com/macros/s/.../exec" />
+        </div>
+
+        <details class="setup-guide">
+          <summary>How to connect your Google Sheet ›</summary>
+          <div class="guide-body">
+            <ol>
+              <li>Open (or create) the Google Sheet you want to write to.</li>
+              <li>Click <strong>Extensions → Apps Script</strong>.</li>
+              <li>Delete any existing code, paste the script below, and press <strong>Save</strong>.</li>
+              <li>Click <strong>Deploy → New deployment</strong>.<br>
+                  Set Type = <em>Web app</em>, Execute as = <em>Me</em>,<br>
+                  Who has access = <em>Anyone</em>. Click <strong>Deploy</strong>.</li>
+              <li>Authorise when prompted, then copy the <strong>Web app URL</strong>.</li>
+              <li>Paste it in the field above and click <strong>Save</strong>.</li>
+            </ol>
+            <pre id="apps-script-code" class="script-box"></pre>
+            <button class="btn-copy" id="copy-script-btn">Copy script</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="option-row">
+        <label for="schedule-select">Run every</label>
+        <select id="schedule-select">
+          <option value="60">1 hour</option>
+          <option value="120">2 hours</option>
+          <option value="180">3 hours</option>
+          <option value="360">6 hours</option>
+          <option value="720">12 hours</option>
+          <option value="1440">24 hours</option>
+        </select>
+      </div>
+      <div class="option-row info-row">
+        <span>Next run</span>
+        <span class="value" id="next-run">—</span>
+      </div>
+      <div class="option-row info-row">
+        <span>Last run</span>
+        <span class="value" id="last-run">Never</span>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button id="save-btn" class="btn-primary">Save</button>
+      <button id="run-now-btn" class="btn-secondary">Run Now</button>
+      <button id="reset-ts-btn" class="btn-danger">Clear workspace cache</button>
+    </div>
+
+    <div id="status" class="status hidden"></div>
+
+    <section class="card" id="log-section">
+      <h2>Run Log</h2>
+      <div id="run-log"><p class="hint">No runs yet.</p></div>
+    </section>
+
+    <section class="card">
+      <h2>Parsed Channels</h2>
+      <div id="parsed-channels"><p class="hint">Save your URLs to see parsed channels.</p></div>
+    </section>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>
