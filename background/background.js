@@ -59,14 +59,21 @@ async function getBestSlackTab() {
   const tab = await chrome.tabs.create({ url: "https://app.slack.com", active: false });
   openedTabId = tab.id;
   await new Promise((resolve) => {
+    let settled = false;
     const listener = (tabId, info) => {
       if (tabId === tab.id && info.status === "complete") {
         chrome.tabs.onUpdated.removeListener(listener);
+        settled = true;
         resolve();
       }
     };
     chrome.tabs.onUpdated.addListener(listener);
-    setTimeout(resolve, 25000);
+    setTimeout(() => {
+      if (!settled) {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    }, 25000);
   });
   await sleep(3000);
   return chrome.tabs.get(tab.id);
@@ -89,6 +96,7 @@ async function runInPage(tabId, func, args = []) {
     func,
     args,
   });
+  if (!results?.length) throw new Error("executeScript returned no results — tab may have navigated");
   const r = results[0];
   // Chrome sets r.error only for script execution errors, not application errors
   if (r?.error) throw new Error(r.error.message || JSON.stringify(r.error));
@@ -135,22 +143,23 @@ const WRONG_WS_ERRORS = [
   "not_in_channel",
   "No token",
   "Token error",
-  "ratelimited",   // different workspaces have independent rate limits
   "account_inactive",
+  // NOTE: ratelimited is NOT here — it means "slow down on this workspace", not "wrong workspace"
 ];
 
 function isWrongWorkspace(errMsg) {
   return WRONG_WS_ERRORS.some((e) => errMsg.includes(e));
 }
 
-function startOfTodayTs() {
+function getOldestTs(daysBack = 1) {
   const d = new Date();
-  d.setHours(0, 0, 0, 0); // local midnight
+  d.setHours(0, 0, 0, 0); // start of today (local midnight)
+  d.setDate(d.getDate() - (daysBack - 1)); // go back N-1 additional days
   return String(Math.floor(d.getTime() / 1000));
 }
 
-// Returns { rows, wsName, workspace } on success, or { status } or { error }
-async function fetchChannelRows(ch, workspaces, tabId) {
+// Returns { rows, wsName, workspace, channelName } on success, or { status } or { error }
+async function fetchChannelRows(ch, workspaces, tabId, daysBack = 1) {
   const cacheKey = `wsCache_${ch.channelId}`;
   const { [cacheKey]: cachedDomain } = await chrome.storage.local.get(cacheKey);
   const hintDomain = ch.domain || workspaces.find((w) => w.teamId === ch.teamId)?.domain;
@@ -160,7 +169,7 @@ async function fetchChannelRows(ch, workspaces, tabId) {
     .filter(Boolean)
     .filter((d, i, a) => a.indexOf(d) === i);
 
-  const oldest = startOfTodayTs();
+  const oldest = getOldestTs(daysBack);
 
   for (const targetDomain of ordered) {
     let result;
@@ -191,11 +200,25 @@ async function fetchChannelRows(ch, workspaces, tabId) {
 
     await chrome.storage.local.set({ [cacheKey]: targetDomain });
 
+    // Resolve channel name (best-effort — never blocks the export)
+    let channelName = null;
+    try {
+      const info = await runInPage(
+        tabId,
+        async (channelId, domain) => {
+          try { return await window.__slackExporter.getChannelInfo(channelId, domain); }
+          catch { return null; }
+        },
+        [ch.channelId, targetDomain]
+      );
+      channelName = info?.name || null;
+    } catch {}
+
     const rows = result.rows;
-    if (!rows.length) return { status: "no messages today", workspace: targetDomain };
+    if (!rows.length) return { status: "no messages today", workspace: targetDomain, channelName };
 
     const ws = workspaces.find((w) => w.domain === targetDomain) || { teamName: targetDomain, domain: targetDomain };
-    return { rows, wsName: ws.teamName || ws.domain, workspace: targetDomain };
+    return { rows, wsName: ws.teamName || ws.domain, workspace: targetDomain, channelName };
   }
 
   return { error: "Channel not found in any workspace" };
@@ -204,8 +227,8 @@ async function fetchChannelRows(ch, workspaces, tabId) {
 // ── Main export run ──────────────────────────────────────────────────────────
 
 async function runScheduledExport() {
-  const { channels: configuredChannels = [], format = "csv", destination = "file", sheetsUrl = "" } =
-    await chrome.storage.local.get(["channels", "format", "destination", "sheetsUrl"]);
+  const { channels: configuredChannels = [], format = "csv", destination = "file", sheetsUrl = "", daysBack = 1 } =
+    await chrome.storage.local.get(["channels", "format", "destination", "sheetsUrl", "daysBack"]);
 
   if (!configuredChannels.length) return;
 
@@ -238,10 +261,18 @@ async function runScheduledExport() {
 
   const log = [];
   const allRows = [];
+  let channelsUpdated = false;
 
   for (const ch of configuredChannels) {
+    const result = await fetchChannelRows(ch, workspaces, tab.id, daysBack);
+
+    // Persist resolved channel name so options/popup can display it
+    if (result.channelName && !ch.label) {
+      ch.label = result.channelName;
+      channelsUpdated = true;
+    }
+
     const channelLabel = ch.label || ch.channelId;
-    const result = await fetchChannelRows(ch, workspaces, tab.id);
 
     if (result.error) {
       log.push({ channel: channelLabel, error: result.error });
@@ -259,6 +290,11 @@ async function runScheduledExport() {
     }
 
     await sleep(500);
+  }
+
+  // Write back resolved channel names (only when something changed)
+  if (channelsUpdated) {
+    await chrome.storage.local.set({ channels: configuredChannels });
   }
 
   if (openedTabId) {

@@ -19,30 +19,31 @@ const APPS_SCRIPT = `function doPost(e) {
       sheet.setFrozenRows(1);
     }
 
-    // Build a set of every text value already in the sheet (for dedup)
-    const existingTexts = new Set();
+    // Build a set of every ts (timestamp) already in the sheet for dedup.
+    // ts is unique per message; text is not ("+1", "ok", etc. would be wrongly dropped).
+    const existingKeys = new Set();
     const lastRow = sheet.getLastRow();
     if (lastRow > 1) {
       const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      const textCol = headerRow.indexOf("text") + 1; // 1-based column index
-      if (textCol > 0) {
+      const tsCol = headerRow.indexOf("ts") + 1; // 1-based column index
+      if (tsCol > 0) {
         sheet
-          .getRange(2, textCol, lastRow - 1, 1)
+          .getRange(2, tsCol, lastRow - 1, 1)
           .getValues()
           .flat()
-          .forEach(v => existingTexts.add(String(v)));
+          .forEach(v => existingKeys.add(String(v)));
       }
     }
 
-    // Only append rows whose text is not already in the sheet.
-    // Also track texts added in this batch to catch intra-batch duplicates.
-    const textIdx = headers.indexOf("text");
+    // Only append rows whose ts is not already in the sheet.
+    // Also track keys added in this batch to catch intra-batch duplicates.
+    const tsIdx = headers.indexOf("ts");
     let appended = 0;
     rows.forEach(row => {
-      const text = textIdx >= 0 ? String(row[textIdx]) : "";
-      if (!existingTexts.has(text)) {
+      const key = tsIdx >= 0 ? String(row[tsIdx]) : "";
+      if (!existingKeys.has(key)) {
         sheet.appendRow(row);
-        existingTexts.add(text);
+        existingKeys.add(key);
         appended++;
       }
     });
@@ -108,7 +109,7 @@ function parseAllUrls(text) {
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
-function renderParsedChannels(parsed) {
+function renderParsedChannels(parsed, savedChannels = []) {
   const container = $("parsed-channels");
   if (!parsed.length) {
     container.innerHTML = '<p class="hint">No channels configured.</p>';
@@ -122,6 +123,8 @@ function renderParsedChannels(parsed) {
           <span class="ch-err">${escHtml(p.error)}</span>
         </div>`;
       }
+      const saved = savedChannels.find((s) => s.channelId === p.channelId);
+      const nameDisplay = saved?.label ? `#${saved.label}` : (p.channelId || "?");
       const wsLabel = p.domain
         ? `${p.domain}.slack.com`
         : p.teamId
@@ -129,7 +132,7 @@ function renderParsedChannels(parsed) {
         : "Any workspace";
       return `<div class="parsed-channel">
         <span>${escHtml(wsLabel)}</span>
-        <span class="ch-id">${p.channelId || "?"}</span>
+        <span class="ch-id">${escHtml(nameDisplay)}</span>
       </div>`;
     })
     .join("");
@@ -223,9 +226,9 @@ function applyDestinationToggle(dest) {
 
 async function load() {
   const { channels = [], format = "csv", includeThreads = false, runLog = [],
-          destination = "file", sheetsUrl = "", scheduleMinutes = 360 } =
+          destination = "file", sheetsUrl = "", scheduleMinutes = 360, daysBack = 1 } =
     await chrome.storage.local.get(["channels", "format", "includeThreads", "runLog",
-                                    "destination", "sheetsUrl", "scheduleMinutes"]);
+                                    "destination", "sheetsUrl", "scheduleMinutes", "daysBack"]);
 
   $("channel-urls").value = channels.map((c) => c.raw || c.channelId).join("\n");
   $("format-select").value = format;
@@ -233,12 +236,13 @@ async function load() {
   $("destination-select").value = destination;
   $("sheets-url").value = sheetsUrl;
   $("schedule-select").value = String(scheduleMinutes);
+  $("days-back-select").value = String(daysBack);
   $("apps-script-code").textContent = APPS_SCRIPT;
 
   applyDestinationToggle(destination);
 
   const parsed = parseAllUrls($("channel-urls").value);
-  renderParsedChannels(parsed);
+  renderParsedChannels(parsed, channels);
   renderLog(runLog);
   await updateTimingDisplay();
 
@@ -249,11 +253,17 @@ async function load() {
   }
 }
 
-// Auto-update log and timing whenever the background writes to storage
+// Auto-update log, timing, and channel names whenever the background writes to storage
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
   if (changes.runLog) renderLog(changes.runLog.newValue || []);
   if (changes.lastRun) updateTimingDisplay();
+  if (changes.channels) {
+    // Background may have resolved channel names during an export run — refresh display
+    const savedChannels = changes.channels.newValue || [];
+    const parsed = parseAllUrls($("channel-urls").value);
+    renderParsedChannels(parsed, savedChannels);
+  }
 });
 
 $("destination-select").addEventListener("change", (e) => {
@@ -290,22 +300,30 @@ $("save-btn").addEventListener("click", async () => {
   const format = $("format-select").value;
   const includeThreads = $("include-threads").checked;
   const scheduleMinutes = parseInt($("schedule-select").value, 10);
-  const channels = valid.map((ch) => ({ ...ch, includeThreads }));
+  const daysBack = parseInt($("days-back-select").value, 10);
 
-  // Read previous schedule before writing, so we can detect a change
-  const { scheduleMinutes: prevSchedule = 360 } = await chrome.storage.local.get("scheduleMinutes");
+  // Read previous state so we can preserve resolved channel names and detect schedule changes
+  const { scheduleMinutes: prevSchedule = 360, channels: prevChannels = [] } =
+    await chrome.storage.local.get(["scheduleMinutes", "channels"]);
 
-  await chrome.storage.local.set({ channels, format, includeThreads, destination, sheetsUrl, scheduleMinutes });
-  renderParsedChannels(parsed);
+  // Preserve labels that the background resolved during previous export runs
+  const channels = valid.map((ch) => {
+    const prev = prevChannels.find((p) => p.channelId === ch.channelId);
+    return { ...ch, includeThreads, label: prev?.label || null };
+  });
+
+  await chrome.storage.local.set({ channels, format, includeThreads, destination, sheetsUrl, scheduleMinutes, daysBack });
+  renderParsedChannels(parsed, channels);
 
   // Only reset the alarm when the interval changed — avoids pushing the next-fire time
   // forward unnecessarily when the user saves other settings.
+  const daysLabel = daysBack === 1 ? "today only" : `last ${daysBack} days`;
   if (scheduleMinutes !== prevSchedule) {
     chrome.runtime.sendMessage({ type: "RESET_ALARM" });
     showStatus(`Saved. Schedule changed to every ${scheduleMinutes / 60}h — next run rescheduled.`, "ok", 8000);
   } else {
     const h = scheduleMinutes / 60;
-    showStatus(`Saved ${valid.length} channel(s). Runs every ${h}h.`, "ok");
+    showStatus(`Saved ${valid.length} channel(s). Runs every ${h}h, fetching ${daysLabel}.`, "ok");
   }
 });
 

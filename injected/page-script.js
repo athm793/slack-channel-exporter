@@ -96,6 +96,18 @@
   window.__slackExporter = {
     getWorkspaces,
 
+    async getChannelInfo(channelId, targetDomain) {
+      try {
+        const data = await slackGet("conversations.info", targetDomain, { channel: channelId });
+        return {
+          name: data.channel?.name || null,
+          isPrivate: data.channel?.is_private || false,
+        };
+      } catch {
+        return { name: null };
+      }
+    },
+
     async listChannels(targetDomain) {
       const channels = [];
       let cursor = "";
